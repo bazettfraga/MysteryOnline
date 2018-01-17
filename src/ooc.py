@@ -14,11 +14,12 @@ from kivy.logger import Logger
 from private_message_screen import PrivateMessageScreen
 from user_box import UserBox
 
+import time
 import youtube_dl
 import os
 
 ytdl_format_options = {
-    'format': 'bestaudio/best',
+    'format': 'mp3/best',#was "bestaudio/best" but apperantly YT discriminates against certain extentions
     'outtmpl': 'temp.mp3',
     'restrictfilenames': True,
     'noplaylist': True,
@@ -30,7 +31,7 @@ ytdl_format_options = {
     'default_search': 'auto',
     'source_address': '0.0.0.0'
 }
-#this thing let's you declare what shit you want ur download to be, neat!!
+#dictonary that dictates what the downloader has to do
 
 class OOCLogLabel(Label):
     def __init__(self, **kwargs):
@@ -68,7 +69,7 @@ class MusicTab(TabbedPanelItem):
             track = root.track
             if track is not None and track.state == 'play':
                 track.stop()
-            if url.find("youtube") == -1:#checks if youtube is not in url string
+            if 'youtube' not in url:#checks if youtube is not in url string
                 try:#does the normal stuff
                     r = requests.get(url)
                 except requests.exceptions.MissingSchema:
@@ -83,12 +84,25 @@ class MusicTab(TabbedPanelItem):
                 f.write(r.content)
                 f.close()
             else:
-                try:
-                    os.remove("temp.mp3")#for some reason my ytdl didn't overwrite the temp.mp3, this is a roundabout way
-                except FileNotFoundError:
-                    print("No temp in directory.")#if the first thing they play when joining MO is a yt link
-                with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:#the actual downloading
-                    ydl.download([url])
+                with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:
+                    VideoDictionary = ydl.extract_info(
+                        url,
+                        download=False #only the meta data will be downloaded
+                    ) #implement a fail state? wat kan go wrong? consult rg3/youtube-dl issues? have guys try and break this?
+                if VideoDictionary['duration'] > 1800: #checks if the song you want to download is bigger than 30 minutes
+                    Logger.warning('Music: length exceeds the 30 minute limit!')
+                    root.is_loading_music = False
+                    return
+                else:
+                    try:
+                        os.remove("temp.mp3")  # the downloader doesn't overwrite files with the same name
+                    except FileNotFoundError:
+                        print("No temp in directory.")  # if the first thing they play when joining MO is a yt link
+                    with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:  # the actual downloading
+                        Tstart = time.time()
+                        ydl.download([url])
+                        Tend = time.time()
+                        print(Tend - Tstart)
             track = SoundLoader.load("temp.mp3")
             config_ = App.get_running_app().config
             track.volume = config_.getdefaultint('sound', 'music_volume', 100) / 100
