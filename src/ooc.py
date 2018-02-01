@@ -31,6 +31,7 @@ ytdl_format_options = {
     'default_search': 'auto',
     'source_address': '0.0.0.0'
 }
+YDlist = ['youtube', 'vimeo', 'dailymotion', 'Pornhub'] #dailymotion's files are way too big and TAKE SO LONG TO DOWNLOAD, but it's in this devbuild
 #dictonary that dictates what the downloader has to do
 
 class OOCLogLabel(Label):
@@ -54,55 +55,41 @@ class MusicTab(TabbedPanelItem):
         self.is_loading_music = True
         if url is None:
             url = self.url_input.text
+        try:
+            with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:
+                VideoDictionary = ydl.extract_info(
+                    url,
+                    download=False
+                )
+            if VideoDictionary['extractor'] == 'Dropbox':
+                pass
+            elif any(VideoDictionary['extractor'] in website for website in YDlist) and VideoDictionary['duration'] < 1800:
+                pass
+            else:
+                Logger.warning('Music: not in the whitelist of websites or is too long')
+                self.is_loading_music = False
+                return
+        except:
+            Logger.warning('Music: url not supported by youtube-dl')
+            self.is_loading_music = False
+            return
         if send_to_all:
             self.url_input.text = ""
             connection_manager = App.get_running_app().get_user_handler().get_connection_manager()
             connection_manager.update_music(url)
             main_screen = App.get_running_app().get_main_screen()
             main_screen.log_window.add_entry("You changed the music.\n")
-        if not any(s in url.lower() for s in ('mp3', 'wav', 'ogg', 'flac', 'watch')):#watch is for yt links
-            Logger.warning("Music: The file you tried to play doesn't appear to contain music.")
-            self.is_loading_music = False
-            return
 
         def play_song(root):
             track = root.track
             if track is not None and track.state == 'play':
                 track.stop()
-            if 'youtube' not in url:#checks if youtube is not in url string
-                try:#does the normal stuff
-                    r = requests.get(url)
-                except requests.exceptions.MissingSchema:
-                    Logger.warning('Music: Invalid URL')
-                    root.is_loading_music = False
-                    return
-                except:
-                    Logger.warning('Music: Unexpected error occurred while loading music')
-                    root.is_loading_music = False
-                    return
-                f = open("temp.mp3", mode="wb")
-                f.write(r.content)
-                f.close()
-            else:
-                with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:
-                    VideoDictionary = ydl.extract_info(
-                        url,
-                        download=False #only the meta data will be downloaded
-                    ) #implement a fail state? wat kan go wrong? consult rg3/youtube-dl issues? have guys try and break this?
-                if VideoDictionary['duration'] > 1800: #checks if the song you want to download is bigger than 30 minutes
-                    Logger.warning('Music: length exceeds the 30 minute limit!')
-                    root.is_loading_music = False
-                    return
-                else:
-                    try:
-                        os.remove("temp.mp3")  # the downloader doesn't overwrite files with the same name
-                    except FileNotFoundError:
-                        print("No temp in directory.")  # if the first thing they play when joining MO is a yt link
-                    with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:  # the actual downloading
-                        Tstart = time.time()
-                        ydl.download([url])
-                        Tend = time.time()
-                        print(Tend - Tstart)
+            try:
+                os.remove("temp.mp3")  # the downloader doesn't overwrite files with the same name
+            except FileNotFoundError:
+                print("No temp in directory.")  # if the first thing they play when joining MO is a yt link
+            with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:  # the actual downloading
+                ydl.download([url])
             track = SoundLoader.load("temp.mp3")
             config_ = App.get_running_app().config
             track.volume = config_.getdefaultint('sound', 'music_volume', 100) / 100
