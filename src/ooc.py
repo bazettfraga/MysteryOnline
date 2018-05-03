@@ -31,7 +31,7 @@ ytdl_format_options = {
     'default_search': 'auto',
     'source_address': '0.0.0.0'
 }
-YDlist = ['youtube', 'vimeo', 'dailymotion', 'Pornhub'] #dailymotion's files are way too big and TAKE SO LONG TO DOWNLOAD, but it's in this devbuild
+YDlist = ['youtube', 'vimeo'] #dailymotion's files are way too big and TAKE SO LONG TO DOWNLOAD, but it's in this devbuild
 #dictonary that dictates what the downloader has to do
 
 class OOCLogLabel(Label):
@@ -49,56 +49,81 @@ class MusicTab(TabbedPanelItem):
         self.loop = True
         self.is_loading_music = False
 
-    def on_music_play(self, url=None, send_to_all=True):
+    def on_music_play(self, url=None):
         if self.is_loading_music:
             return
         self.is_loading_music = True
         if url is None:
             url = self.url_input.text
-        try:
-            with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:
-                VideoDictionary = ydl.extract_info(
-                    url,
-                    download=False
-                )
-            if VideoDictionary['extractor'] == 'Dropbox':
-                pass
-            elif any(VideoDictionary['extractor'] in website for website in YDlist) and VideoDictionary['duration'] < 1800:
-                pass
-            else:
-                Logger.warning('Music: not in the whitelist of websites or is too long')
-                self.is_loading_music = False
-                return
-        except:
-            Logger.warning('Music: url not supported by youtube-dl')
-            self.is_loading_music = False
-            return
-        if send_to_all:
-            self.url_input.text = ""
-            connection_manager = App.get_running_app().get_user_handler().get_connection_manager()
-            connection_manager.update_music(url)
-            main_screen = App.get_running_app().get_main_screen()
-            main_screen.log_window.add_entry("You changed the music.\n")
 
-        def play_song(root):
-            track = root.track
-            if track is not None and track.state == 'play':
-                track.stop()
+        def checker(self, send_to_all=True):
+            #Start off by checking whether yt can 1) download it 2) the extractor type 3) length
+            #The meta data is usefull cause with it we could avoid stopping tracks to swap with "fake songs", ex. link to stackoverflow
+            #This also means that file can be checked ahead of time before downloading until we get streaming down
+            #Most of music play has been moved to another thread for this, this has the downside that sending music can take some time
+            #What still needs to be done is removing the "fake song" url from the input box
+            #After feedback from master Zack, this could be later implemented in the refactoring build, with massive amounts of tweaking mind you
+            #However, despite the fact that i made i format list way back in this code, i still fear that playlists and channels may cause issues
+            #Further experimentation is required
             try:
-                os.remove("temp.mp3")  # the downloader doesn't overwrite files with the same name
-            except FileNotFoundError:
-                print("No temp in directory.")  # if the first thing they play when joining MO is a yt link
-            with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:  # the actual downloading
-                ydl.download([url])
-            track = SoundLoader.load("temp.mp3")
-            config_ = App.get_running_app().config
-            track.volume = config_.getdefaultint('sound', 'music_volume', 100) / 100
-            track.loop = root.loop
-            track.play()
-            root.track = track
-            root.is_loading_music = False
+                Tstart = time.time()
+                with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:
+                    VideoDictionary = ydl.extract_info(
+                        url,
+                        download=False
+                    )
+                Tend = time.time()
+                print('Meta download took: ' + str(Tend - Tstart))#Either my laptop is slow af or this download takes more than a second
+                if VideoDictionary['extractor'] == 'Dropbox':
+                    pass
+                elif any(VideoDictionary['extractor'] in website for website in YDlist) and VideoDictionary[
+                    'duration'] < 1800:#length checking and if the website is in the format list
+                    pass
+                else:
+                    Logger.warning('Music: not in the whitelist of websites or is too long')
+                    App.get_running_app().get_main_screen().log_window.add_entry("Music: not in the whitelist of websites or is too long.\n")
+                    self.is_loading_music = False
+                    send_to_all = False
+                    return send_to_all
+            except:
+                Logger.warning('Music: url not supported by youtube-dl')
+                App.get_running_app().get_main_screen().log_window.add_entry("URL not supported by youtube-dl.\n")
+                self.is_loading_music = False
+                send_to_all = False
+                return send_to_all
 
-        threading.Thread(target=play_song, args=(self,)).start()
+            if send_to_all:
+                #print("SEND TO ALL = TRUE")
+                self.url_input.text = ""
+                connection_manager = App.get_running_app().get_user_handler().get_connection_manager()
+                connection_manager.update_music(url)
+                main_screen = App.get_running_app().get_main_screen()
+                main_screen.log_window.add_entry("You changed the music.\n")
+
+            def play_song(root):
+                track = root.track
+                if track is not None and track.state == 'play':
+                    track.stop()
+                try:
+                    os.remove("temp.mp3")  # the downloader doesn't overwrite files with the same name
+                except FileNotFoundError:
+                    print("No temp in directory.")  # if the first thing they play when joining MO is a yt link
+                with youtube_dl.YoutubeDL(ytdl_format_options) as ydl:  # the actual downloading
+                    Tstart = time.time()
+                    ydl.download([url])
+                    Tend = time.time()
+                    print('MP3 download took: ' + str(Tend - Tstart))
+                track = SoundLoader.load("temp.mp3")
+                config_ = App.get_running_app().config
+                track.volume = config_.getdefaultint('sound', 'music_volume', 100) / 100
+                track.loop = root.loop
+                track.play()
+                root.track = track
+                root.is_loading_music = False
+            play_song(self)
+
+        threading.Thread(target=checker, args=(self,)).start()
+        #It just works
 
     def music_stop(self, local=True):
         if self.track is not None:
