@@ -49,7 +49,7 @@ class MusicTab(TabbedPanelItem):
         self.loop = True
         self.is_loading_music = False
 
-    def on_music_play(self, url=None):
+    def on_music_play(self, url=None, send_to_all = False):
         if self.is_loading_music:
             return
         self.is_loading_music = True
