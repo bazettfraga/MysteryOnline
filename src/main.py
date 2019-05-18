@@ -129,7 +129,7 @@ class MysteryOnlineApp(App):
         return msm
 
     def build_config(self, config):
-        config.setdefaults('display', {
+            config.setdefaults('display', {
             'resolution': '1920x1080',
             'rpg_mode': 0,
         })
